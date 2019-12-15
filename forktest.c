@@ -51,6 +51,6 @@ forktest(void)
 int
 main(void)
 {
-  forktest();
+  fork();
   exit();
 }
