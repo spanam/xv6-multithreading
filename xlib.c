@@ -23,17 +23,17 @@ int xthread_join() {
   int tid = join(&stack);
   if(tid != -1)
     free(stack);
-  return tid;
+  return 0;
 }
 
-void lock_init(volatile lock_t *lock) {
+void xthread_lock_init(volatile lock_t *lock) {
   *lock = 0;
 }
 
-void lock_get(volatile lock_t *lock) {
+void xthread_lock_get(volatile lock_t *lock) {
   while(xchg(lock, 1) == 1);
 }
 
-void lock_release(volatile lock_t *lock) {
-  *lock = 0;
+void xthread_lock_release(volatile lock_t *lock) {
+  xchg(lock, 0);
 }

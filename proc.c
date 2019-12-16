@@ -534,38 +534,58 @@ procdump(void)
 }
 
 int
-clone(void (*fcn) (void*), void *arg, void *stack)
+clone(void)
 {
+  
+  void (*fcn) (void*);
+  void *arg = 0;
+  void *stack = 0;
+  if(argptr(0, (void*)&fcn, sizeof(fcn) < 0))
+    return -1;
+  if(argptr(1, (void*)&arg, sizeof(arg) < 0))
+    return -1;
+  if(argptr(2, (void*)&stack, sizeof(stack) < 0))
+    return -1;
+  
   int i, pid;
   struct proc *np;
   struct proc *curproc = myproc();	
 
   uint ustack[2];
 
+  if((uint)stack % PGSIZE != 0)
+    return -1;
+
+  if(curproc->sz - (uint)stack < PGSIZE)
+    return -1;
+
   // Allocate process.
   if((np = allocproc()) == 0){
     return -1;
   }
-  
   // Set up pages, etc
-  np->tstack = stack;
-  np->sz = (uint)stack + PGSIZE;
+  np->tstack = (uint)stack;
+  np->sz = curproc->sz;
   np->pgdir = curproc->pgdir;
   *np->tf = *curproc->tf;
   np->parent = curproc;
-  np->isThread = 1;
 
   // Real stack setup
-  np->tf->esp = (uint)stack + PGSIZE;
+  uint stackPointer = (uint)stack + PGSIZE;
   ustack[0] = 0xffffffff;
   ustack[1] = (uint)arg;
-  np->tf->esp -= 2 * sizeof(uint); // Set stack pointer
-  if(copyout(np->pgdir, np->tf->esp, ustack, 2 * sizeof(uint)))
+  stackPointer -= 2 * sizeof(uint); // Set stack pointer
+  if(copyout(np->pgdir, stackPointer, ustack, 2 * sizeof(uint)))
     return -1;
   
+  np->tf->esp = stackPointer;
+//  np->tf->esp = (uint)(stack + PGSIZE - 4);
   np->tf->eax = 0;
   np->tf->eip = (uint)fcn;
-  np->tf->ebp = np->tf->esp;
+  np->tf->ebp = np->tf->esp - 4;
+
+//  *((uint*)(np->tf->esp)) = (uint)arg;
+//  *((uint*)(np->tf->esp - 4)) = 0xFFFFFFFF;
 
   for(i = 0; i < NOFILE; i++) {
     if(curproc->ofile[i])
@@ -573,35 +593,40 @@ clone(void (*fcn) (void*), void *arg, void *stack)
   }
   np->cwd = idup(curproc->cwd);
 
-  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
   pid = np->pid;
+  acquire(&ptable.lock);
   np->state = RUNNABLE;
+  release(&ptable.lock);
+  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
   return pid;
 }
 
 int
-join(void **stack)
+join(void)
 {
-  struct proc *p;
-  int havekids, pid;
   struct proc *curproc = myproc();
+  void **stack;
+  if(argptr(0, (void*)&stack, sizeof(stack) < 0))
+    return -1;
+  if((curproc->sz - (uint)stack) < sizeof(void**))
+    return -1;
+  struct proc *p;
+  int havethreads, pid;
   
   acquire(&ptable.lock);
   for(;;){
     // Scan through table looking for exited children.
-    havekids = 0;
+    havethreads = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->parent != curproc)
+      if(p->parent != curproc && p->pgdir != curproc->pgdir)
         continue;
-      if(p->pgdir != curproc->pgdir || p->isThread)
-	continue;
-      havekids = 1;
+      havethreads = 1;
       if(p->state == ZOMBIE){
-        // Found one.
-        pid = p->pid;
+	// Found one.
+	*stack = (void*)p->tstack;
+	pid = p->pid;
         kfree(p->kstack);
         p->kstack = 0;
-        freevm(p->pgdir);
         p->pid = 0;
         p->parent = 0;
         p->name[0] = 0;
@@ -611,9 +636,10 @@ join(void **stack)
         return pid;
       }
     }
+    
 
     // No point waiting if we don't have any children.
-    if(!havekids || curproc->killed){
+    if(!havethreads || curproc->killed){
       release(&ptable.lock);
       return -1;
     }
@@ -622,3 +648,5 @@ join(void **stack)
     sleep(curproc, &ptable.lock);  //DOC: wait-sleep
   }
 }
+
+

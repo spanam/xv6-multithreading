@@ -43,7 +43,7 @@ int atoi(const char*);
 
 // xlib.c
 int xthread_create(void (*)(void*), void*);
-int thread_join(void);
+int xthread_join(void);
 void lock_init(volatile lock_t*);
 void lock_get(volatile lock_t*);
 void lock_release(volatile lock_t*);

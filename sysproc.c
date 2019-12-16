@@ -92,7 +92,7 @@ sys_uptime(void)
 
 int sys_clone(void)
 {
-  void (*func)(void*);
+/*  void (*func)(void*);
   void *arg, *stack;
 
   if(argptr(0, (void*)&func,  sizeof(void*)) < 0)
@@ -103,12 +103,16 @@ int sys_clone(void)
     return -1;
 
   return clone(func, arg, stack);
+*/
+  return clone();
 }
 
 int sys_join(void)
-{
+{ /*
   void **stack;
   if(argptr(0, (void*)&stack, sizeof(void**)) < 0)
     return -1;
   return join(stack);
+*/
+  return join();
 }
